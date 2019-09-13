@@ -1,4 +1,4 @@
-package main
+package counter
 
 import (
 	"fmt"
@@ -24,9 +24,6 @@ func TestCountUp(t *testing.T) {
 				t.Error("Counter did not increment correctly")
 			}
 
-		}
-		if testing.Verbose() {
-			fmt.Printf("Total count %d\n", c.Read())
 		}
 
 		c.Reset()
@@ -57,12 +54,75 @@ func TestCompetingWrites(t *testing.T) {
 	}
 	wg.Wait()
 
-	if testing.Verbose() {
-		fmt.Printf("Total count expected %d got %d\n", iterations*competingFuncs, c.Read())
-	}
-
 	if c.Read() != iterations*competingFuncs {
 		t.Error("Locking failed, count was wrong")
 	}
+
+}
+
+func TestCompareAgainstNoMux(t *testing.T) {
+
+	iterations := 1000
+	competingFuncs := 200
+
+	nmExpected, nmGot := demoNonMux(iterations, competingFuncs)
+	mExpected, mGot := demoMux(iterations, competingFuncs)
+
+	fmt.Println("\u250C----------------------------------------\u2510")
+	fmt.Println("| method | expected |    got   |  ok?    |")
+	fmt.Println("|--------|----------|----------|---------|")
+	fmt.Printf("|non-mux |%8d  |%8d  |  %v  |\n", nmExpected, nmGot, nmExpected == nmGot)
+	fmt.Printf("|  this  |%8d  |%8d  |  %v   |\n", mExpected, mGot, mExpected == mGot)
+	fmt.Println("\u2514----------------------------------------\u2518")
+
+	if mExpected != mGot {
+		t.Error("Muxed counter failed to get the right count")
+	}
+
+	if nmExpected == nmGot {
+		t.Error("non-muxed method did not experience an error - that's weird!")
+	}
+
+}
+
+func demoNonMux(iterations int, competingFuncs int) (int, int) {
+
+	c := 0
+
+	var wg sync.WaitGroup
+	wg.Add(competingFuncs)
+
+	for j := 0; j < competingFuncs; j++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				c++
+			}
+		}()
+	}
+	wg.Wait()
+
+	return iterations * competingFuncs, c
+
+}
+
+func demoMux(iterations int, competingFuncs int) (int, int) {
+
+	c := New()
+
+	var wg sync.WaitGroup
+	wg.Add(competingFuncs)
+
+	for j := 0; j < competingFuncs; j++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				c.Increment()
+			}
+		}()
+	}
+	wg.Wait()
+
+	return iterations * competingFuncs, c.Read()
 
 }
